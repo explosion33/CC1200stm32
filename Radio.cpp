@@ -2,7 +2,7 @@
 #include <string>
 #include "Radio.h"
 
-Radio::Radio(SerialStream<BufferedSerial> * pc) : radio(PIN_SPI_MOSI, PIN_SPI_MISO, PIN_SPI_SCLK, PIN_CS, PIN_RST, pc) {
+Radio::Radio(Stream * pc) : radio(PIN_SPI_MOSI, PIN_SPI_MISO, PIN_SPI_SCLK, PIN_CS, PIN_RST, pc) {
     this->pc = pc;
     this->max_msg_size = 100;
     this->debug = false;

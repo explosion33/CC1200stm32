@@ -3,17 +3,20 @@
 #include "SerialStream.h"
 #include "CC1200.h"
 
-#define PIN_SPI_MOSI PA_7  //PC_3
-#define PIN_SPI_MISO PA_6  //PC_2
-#define PIN_SPI_SCLK PA_5  //PB_10
-#define PIN_CS PA_4  //PA_4
-#define PIN_RST PC_5 //PC_5
+
+#include <Stream.h>
+
+#define PIN_SPI_MOSI PB_15  //PC_7
+#define PIN_SPI_MISO PB_14  //PA_6
+#define PIN_SPI_SCLK PB_13  //PA_5
+#define PIN_CS PB_12  //PA_4
+#define PIN_RST PA_8 //PA_5
 
 class Radio{
     
     public:
 
-        Radio(SerialStream<BufferedSerial> * pc);
+        Radio(Stream * pc);
         ~Radio();
         bool checkExistance();
         bool init();
@@ -49,7 +52,7 @@ class Radio{
 
     private:
 
-        SerialStream<BufferedSerial> * pc;
+        Stream * pc;
         CC1200 radio;
         size_t max_msg_size;
         bool debug = false;
