@@ -1,0 +1,10 @@
+BUILD
+.mbed
+mbed-os
+CC1200
+TARGET_BLACKPILL_F401CC
+BLACKPILL_Custom_Target.lib
+CC1200.lib
+custom_targets.json
+mbed_app.json
+mbed-os.lib
