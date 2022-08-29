@@ -14,13 +14,15 @@
 
 
 #define ADDR_PIN PC_3
-#define SERIAL_PIN PC_13
+#define SERIAL_PIN PC_14
 
 #define LED1 PA_2
 
 #define ADDR 0x34
 #define BADDR 0x35
 
+#define VID 0x3A3A
+#define PID 0x0001
 
 #define SDA PB_7
 #define SCL PB_6
@@ -29,7 +31,7 @@ void I2C_MODE() {
     DigitalOut led1(LED1);
     led1.write(1);
 
-    USBSerial pc(false);  
+    USBSerial pc(false, VID, PID);  
     //SerialStream<serial> pc(serial);
 
     DigitalIn addrPin(ADDR_PIN);
@@ -177,7 +179,15 @@ void I2C_MODE() {
                             radio.set_modulation(buf[1]);
                             pc.printf("setting modulation to %d", buf[1]);
                             break;
-                        
+                        case 9: {
+                            bool res = radio.init();
+                            pc.printf("reset CC1200, detected = %s\n", res ? "true" : "false");
+                            break;
+                        }
+                        case 10: {
+                            pc.printf("attempting soft STM32 Reset");
+                            NVIC_SystemReset();
+                        }
                         case 0:
                         default:
                             state = Idle;
@@ -207,8 +217,7 @@ void SERIAL_MODE() {
     DigitalOut led1(LED1);
     led1.write(1);
 
-    USBSerial pc(false);
-
+    USBSerial pc(false, VID, PID);
 
     BufferedSerial dummy(PA_9, PA_10, 9600);
     SerialStream<BufferedSerial> dummyPC(dummy);
@@ -296,6 +305,14 @@ void SERIAL_MODE() {
             case 8:
                 radio.set_modulation(buf[1]);
                 break;
+            case 9: {
+                radio.init();
+                break;
+            }
+            case 10: {
+                NVIC_SystemReset();
+            }
+            case 0:
             default: {
                 char msg[13] = "ArmLabCC1200";
                 pc.write(msg, 13);
