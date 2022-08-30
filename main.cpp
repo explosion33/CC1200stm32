@@ -315,7 +315,7 @@ void SERIAL_MODE() {
             case 0:
             default: {
                 char msg[13] = "ArmLabCC1200";
-                pc.write(msg, 13);
+                pc.write(msg, 12);
             }
         }
     }
