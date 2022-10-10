@@ -1,0 +1,5 @@
+^BUILD$
+^.mbed$
+^mbed-os$
+^CC1200$
+^TARGET_BLACKPILL_F401CC$

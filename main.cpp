@@ -16,7 +16,7 @@
 #define ADDR_PIN PC_3
 #define SERIAL_PIN PC_14
 
-#define LED1 PA_2
+#define S_LED_1 PA_2
 
 #define ADDR 0x34
 #define BADDR 0x35
@@ -28,7 +28,7 @@
 #define SCL PB_6
 
 void I2C_MODE() {
-    DigitalOut led1(LED1);
+    DigitalOut led1(S_LED_1);
     led1.write(1);
 
     USBSerial pc(false, VID, PID);  
@@ -72,7 +72,9 @@ void I2C_MODE() {
 
     State state = Idle;
     int arg = 0;
-    string packet = "";
+
+    size_t len;
+    char* packet;
 
     while (1) {
         if (state == Idle) {
@@ -90,10 +92,10 @@ void I2C_MODE() {
                 }
 
                 else if (state == Recieve_len) {
-                    slave.write(packet.length());
+                    slave.write(len);
 
 
-                    if (packet.length() == 0) {
+                    if (len == 0) {
                         state = Idle;
                         pc.printf("no packet, skipping Recieve phase\n");
                         pc.printf("mode: Idle\n");
@@ -105,8 +107,8 @@ void I2C_MODE() {
                 }
 
                 else if (state == Recieve) {
-                    slave.write(packet.c_str(), packet.length());
-                    packet = "";
+                    slave.write(packet, len);
+                    delete[] packet;
                     state = Idle;
                     pc.printf("mode: Idle\n");
                 }
@@ -130,7 +132,7 @@ void I2C_MODE() {
                             state = Recieve_len;
                             pc.printf("collecting packet\n");
                             //packet = "test test msg";
-                            packet = radio.recieve();
+                            packet = radio.recieve(&len);
 
                             pc.printf("mode: Recieve_len, waiting for read\n");
                             break;
@@ -214,7 +216,7 @@ void I2C_MODE() {
 }
 
 void SERIAL_MODE() {
-    DigitalOut led1(LED1);
+    DigitalOut led1(S_LED_1);
     led1.write(1);
 
     USBSerial pc(false, VID, PID);
@@ -248,28 +250,31 @@ void SERIAL_MODE() {
             case 1: {
                 int size = buf[1];
 
-                char msg[size+1];            
+                char msg[size];            
 
                 for (int i = 0; i<size; i++) {
                     msg[i] = pc.getc();
                 }
                 pc.getc(); //flush trailing newline / return char
-                msg[size] = 0;
 
-                radio.transmit(msg, size+1);
+                radio.transmit(msg, size);
                 //pc.printf("%d, %s\n", buf[1], msg);
                 break;
             }
             case 2: {
-                string packet = radio.recieve();
+                size_t len = 0;
+                char* packet = radio.recieve(&len);
 
-                pc.printf("%c",(char)packet.length());
+                //pc.printf("%c",(char)len);
+                pc.putc((char) len);
 
-                if (packet.length() == 0) {
+                if (len == 0) {
                     continue;
                 }
 
-                pc.printf("%s", packet.c_str());
+                for (int i = 0; i<len; i++) {
+                    pc.putc(packet[i]);
+                }
 
                 break;
             }

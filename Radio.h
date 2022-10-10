@@ -27,7 +27,7 @@ class Radio{
         void checkSignalTransmit();
         void transmit(const char* message, size_t len);
         bool hasPacket();
-        string recieve();
+        char* recieve(size_t* len);
 
         bool set_frequency(float frequency);
         bool set_power(float power);

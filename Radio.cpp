@@ -132,7 +132,7 @@ bool Radio::hasPacket() {
     return res;
 }
 
-string Radio::recieve() {
+char* Radio::recieve(size_t* len) {
     radio.startRX();
 
     size_t message_size;
@@ -153,25 +153,32 @@ string Radio::recieve() {
 
 
     if (radio.hasReceivedPacket()) {
-        size_t bytes = radio.receivePacket(receiveBuffer, this->max_msg_size-1);
+        size_t bytes = radio.receivePacket(receiveBuffer, this->max_msg_size);
         //radio.idle();
 
         if (bytes > max_msg_size) {
             if (debug) {
                 pc->printf("recieved %d bytes, max size is %d ... discarding", bytes, this->max_msg_size);
             }
-            return "";
+
+            *len = 0;
+            return new char[0];
         }
 
-        receiveBuffer[bytes] = '\0';
+        char* out = new char[bytes];
+
+        for (int i = 0; i<bytes; i++) {
+            out[i] = receiveBuffer[i];
+        }
         
         
-        string out = string(receiveBuffer);
+        *len = bytes;
         return out;
     }
 
     //radio.idle();
-    return "";
+    *len = 0;
+    return new char[0];
 }
 
 

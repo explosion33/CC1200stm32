@@ -8,3 +8,4 @@ CC1200.lib
 custom_targets.json
 mbed_app.json
 mbed-os.lib
+.hg
