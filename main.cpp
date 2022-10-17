@@ -13,16 +13,17 @@
 
 
 
-#define ADDR_PIN PC_3
-#define SERIAL_PIN PC_14
+#define ADDR_PIN PA_3
+#define SERIAL_PIN PA_15
 
-#define S_LED_1 PA_2
+#define S_LED_1 PB_0
+#define S_LED_2 PB_1
 
 #define ADDR 0x34
 #define BADDR 0x35
 
 #define VID 0x3A3A
-#define PID 0x0001
+#define PID 0x0002
 
 #define SDA PB_7
 #define SCL PB_6
@@ -30,6 +31,7 @@
 void I2C_MODE() {
     DigitalOut led1(S_LED_1);
     led1.write(1);
+    
 
     USBSerial pc(false, VID, PID);  
     //SerialStream<serial> pc(serial);
@@ -217,7 +219,9 @@ void I2C_MODE() {
 
 void SERIAL_MODE() {
     DigitalOut led1(S_LED_1);
+    DigitalOut led2(S_LED_1);
     led1.write(1);
+    led2.write(1);
 
     USBSerial pc(false, VID, PID);
 
@@ -276,6 +280,8 @@ void SERIAL_MODE() {
                     pc.putc(packet[i]);
                 }
 
+                delete[] packet;
+
                 break;
             }
             case 3:
@@ -329,6 +335,8 @@ void SERIAL_MODE() {
 
 int main()
 {
+    DigitalOut led2(S_LED_2);
+    led2.write(1);
     DigitalIn serPin(SERIAL_PIN);
 
     serPin.mode(PullDown);
