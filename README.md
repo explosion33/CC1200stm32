@@ -1,5 +1,7 @@
 # CC1200stm32
-Code for the STM32 operating in tandum with ArmLabCC1200 radios
+Embedded software for CC1200 and STM32 based radios
+
+[Custom radio build](https://github.com/explosion33/ArmLabRadio_PCB)
 
 ## Credit
 Huge thanks to Jamie Smith, who wrote the [CC1200 interface](https://os.mbed.com/users/MultipleMonomials/code/CC1200/) used in this project
