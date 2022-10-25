@@ -30,7 +30,9 @@
 
 void I2C_MODE() {
     DigitalOut led1(S_LED_1);
+    DigitalOut led2(S_LED_2);
     led1.write(1);
+    led2.write(1);
     
 
     USBSerial pc(false, VID, PID);  
@@ -81,9 +83,11 @@ void I2C_MODE() {
     while (1) {
         if (state == Idle) {
             led1.write(0);
+            led2.write(1);
         }
         else {
             led1.write(1);
+            led2.write(0);
         }
         int i = slave.receive();
         switch (i) {
@@ -219,9 +223,7 @@ void I2C_MODE() {
 
 void SERIAL_MODE() {
     DigitalOut led1(S_LED_1);
-    DigitalOut led2(S_LED_1);
-    led1.write(1);
-    led2.write(1);
+    DigitalOut led2(S_LED_2);
 
     USBSerial pc(false, VID, PID);
 
@@ -237,6 +239,7 @@ void SERIAL_MODE() {
     while (1) {
         pc.sync();
         led1.write(0);
+        led2.write(1);
         //pc.printf("idle\n");
 
         // get command
@@ -247,6 +250,7 @@ void SERIAL_MODE() {
         }
         pc.getc(); //flush trailing newline / return char
         
+        led2.write(0);
         led1.write(1);
         //pc.printf("got cmd: 0x%X 0x%X 0x%X 0x%X 0x%X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
 
@@ -335,8 +339,6 @@ void SERIAL_MODE() {
 
 int main()
 {
-    DigitalOut led2(S_LED_2);
-    led2.write(1);
     DigitalIn serPin(SERIAL_PIN);
 
     serPin.mode(PullDown);
