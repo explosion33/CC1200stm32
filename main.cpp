@@ -28,6 +28,12 @@
 #define SDA PB_7
 #define SCL PB_6
 
+#define GPIO1 PB_2
+#define GPIO2 PB_3
+
+/* External I2C control function for radio
+ * Control Software can be found on github
+ */
 void I2C_MODE() {
     DigitalOut led1(S_LED_1);
     DigitalOut led2(S_LED_2);
@@ -221,6 +227,9 @@ void I2C_MODE() {
     }
 }
 
+/* External Serial control function for radio
+ * Control Software can be found on github
+ */
 void SERIAL_MODE() {
     DigitalOut led1(S_LED_1);
     DigitalOut led2(S_LED_2);
@@ -277,8 +286,9 @@ void SERIAL_MODE() {
                 pc.putc((char) len);
 
                 if (len == 0) {
+                    delete[] packet;
                     continue;
-                }
+                }       
 
                 for (int i = 0; i<len; i++) {
                     pc.putc(packet[i]);
@@ -337,15 +347,86 @@ void SERIAL_MODE() {
 }
 
 
+/* Example function for how the radio can be used in a standalone mode
+ * Function essentially constantly waits for a message, when it gets one it:
+ *      transmits a status
+ *      prints the message to console
+ *      if the message is 1 or 0, toggles gpio
+ *
+ * Note: I found that when working at high transmission speeds (1ms external delay on Serial mode)
+ *       the delay should be fine tuned, too low of a delay means packets are not fully read leading to
+ *       bad data getting stuck in the buffer, too much of a delay and packets are skipped
+ */
+void REPEAT() {
+    USBSerial pc(false, 0x0, 0x0);
+
+    DigitalOut led1(S_LED_1);
+    DigitalOut led2 (S_LED_2);
+    DigitalOut gpio2(GPIO2);
+
+    led1.write(1);
+    gpio2.write(0);
+
+    Radio radio(&pc);
+    radio.init();
+    radio.setup_443();
+
+    radio.set_debug(false);
+
+
+    size_t len = 0;
+    char* packet;
+
+    while (1) {
+        led2.write(0);
+        
+        packet = radio.recieve(&len);
+
+        if (len == 0) {
+            ThisThread::sleep_for(18ms);
+
+            delete[] packet;
+            continue;
+        }
+
+        led2.write(1);
+
+        radio.transmit("rec", 4);
+
+        ThisThread::sleep_for(18ms);
+
+        if (len == 1) {
+            if (packet[0] == '1') {
+                gpio2.write(1);
+            }
+            else if (packet[0] == '0') {
+                gpio2.write(0);
+            }
+        }
+
+        for (int i = 0; i<len; i++) {
+            pc.putc(packet[i]);
+        }
+        pc.putc('\n');
+        
+        delete[] packet;
+    }
+
+}
+
+
 int main()
 {
     DigitalIn serPin(SERIAL_PIN);
 
     serPin.mode(PullDown);
 
+    ThisThread::sleep_for(1s);
+
     if (serPin.read() == 1) {
         SERIAL_MODE();
     }
 
     I2C_MODE();
+    //REPEAT();
 }
