@@ -10,7 +10,7 @@ Radio::Radio(Stream * pc) : radio(PIN_SPI_MOSI, PIN_SPI_MISO, PIN_SPI_SCLK, PIN_
     this->power = 0;
 
     radio.setOnReceiveState(CC1200::State::RX, CC1200::State::RX);
-    radio.setOnTransmitState(CC1200::State::TX);
+    radio.setOnTransmitState(CC1200::State::RX);
 }
 
 Radio::~Radio(){
@@ -111,6 +111,12 @@ void Radio::transmit(const char* message, size_t len) {
     }
     bool success = radio.enqueuePacket(message, len);
 
+    if (success) {
+        while (radio.getTXFIFOLen() > 0) {
+            ThisThread::sleep_for(1ms);
+        }
+    }
+
     if (debug) {
         pc->printf("sent: %s\n", (success ? "true" : "false")); 
 
@@ -122,37 +128,52 @@ void Radio::transmit(const char* message, size_t len) {
 }
 
 bool Radio::hasPacket() {
-    radio.startRX();
+    if (radio.getState() != CC1200::State::RX)
+        radio.startRX();
+
     //ThisThread::sleep_for(30ms);
     while (radio.getState() != CC1200::State::RX) {
         radio.updateState();
     }
     bool res = this->radio.hasReceivedPacket();
-    radio.idle();
+    //radio.idle();
     return res;
 }
 
 char* Radio::recieve(size_t* len) {
-    radio.startRX();
-
     size_t message_size;
     char receiveBuffer[this->max_msg_size];
 
-	/*if(mode == CC1200::PacketMode::FIXED_LENGTH)
-	{
-		rxRadio.setPacketLength(sizeof(message) - 1);
-	}*/
+    switch (radio.getState()) {
+        case CC1200::State::RX_FIFO_ERROR: {
+            radio.receivePacket(receiveBuffer, this->max_msg_size);
+            radio.idle();
+            
+            *len = 0;
+            return new char[0];
+
+            break;
+        }
+        case CC1200::State::RX: {
+            break;
+        }
+        default: {
+            radio.startRX();
+        }
+    }
+
+    bool hp = radio.hasReceivedPacket();
 
 
-    if (debug) {
+    if (debug && radio.getRXFIFOLen() > 0) {
         pc->printf("\n---------------------------------\n");
 
-        pc->printf("RX radio: state = 0x%" PRIx8 ", RX FIFO len = %zu\n",
-                    static_cast<uint8_t>(radio.getState()), radio.getRXFIFOLen());
+        pc->printf("RX radio: state = 0x%" PRIx8 ", RX FIFO len = %zu | hasPacket: %d\n",
+                    static_cast<uint8_t>(radio.getState()), radio.getRXFIFOLen(), hp);
     }
 
 
-    if (radio.hasReceivedPacket()) {
+    if (hp) {
         size_t bytes = radio.receivePacket(receiveBuffer, this->max_msg_size);
         //radio.idle();
 
