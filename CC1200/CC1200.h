@@ -6,9 +6,11 @@
 #define LIGHTSPEEDRANGEFINDER_CC1200_H
 
 #include <mbed.h>
-#include <Stream.h>
+#include "Serial.h"
 
 #include <cstdint>
+
+#define CC1200_SER_DEBUG(...) {if (debugStream != nullptr) {debugStream->debug("CC1200| ", __VA_ARGS__);}}
 
 /**
  *  Base driver for the CC1200 radio communications IC.
@@ -21,7 +23,7 @@ class CC1200
 	DigitalOut rst;
 
 	// Output to print debug messages to
-	Stream * debugStream;
+	Serial* debugStream;
 
 public:
 
@@ -211,7 +213,7 @@ public:
 	 * @param _debugStream Stream to print error/debug information on.
 	 * @param isCC1201 True if the chip is a CC1201, false if it is a CC1200.  The CC1201 is a cheaper option that lacks low bandwidth settings but is otherwise identical.
 	 */
-	CC1200(PinName mosiPin, PinName misoPin, PinName sclkPin, PinName csPin, PinName rstPin, Stream * _debugStream, bool _isCC1201 = false);
+	CC1200(PinName mosiPin, PinName misoPin, PinName sclkPin, PinName csPin, PinName rstPin, Serial* _debugStream, bool _isCC1201 = false);
 
 	/**
 	 * Reset the chip and attempt to connect to it.

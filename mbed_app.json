@@ -1,6 +1,8 @@
 {
     "target_overrides": {
-        "*": {
+        "BLACKPILL_F401CC": {
+            "target.clock_source": "USE_PLL_HSE_XTAL",
+            "target.hse_value": "16000000",
             "target.printf_lib": "std"
         }
     }

@@ -1,432 +1,440 @@
-#include <mbed.h>
-#include "SerialStream.h"
-#include "Radio.h"
-#include <cinttypes>
-#include <chrono>
-#include <cstddef>
+#include <cstdint>
 #include <cstdio>
-#include <cstring>
-#include <string>
+#include <mbed.h>
+#include <Serial.h>
+#include "Radio.h"
 
+#define TX PA_9
+#define RX PA_10
 
-#include <USBSerial.h>
+#define LED1 PB_7
+#define LED2 PB_6
 
+#define GPIO1 PB_8
+#define GPIO2 PB_9
 
+#define MOSI           PB_15
+#define MISO           PB_14
+#define SCLK           PB_13
+#define CS             PB_12
+#define RADIO_RST      PA_8
+#define RADIO_INT      PA_7
+#define RADIO_MARC_INT PA_6
 
-#define ADDR_PIN PA_3
-#define SERIAL_PIN PA_15
+#define SERIAL_START_BYTE 234
 
-#define S_LED_1 PB_0
-#define S_LED_2 PB_1
+volatile char cmdbuf[200] = {0};
+volatile bool found = false;
+void do_cobs() {
+    size_t len = cmdbuf[1];
+    size_t index = 2;
+    for (int i = 0; i < len; i++) {
+        size_t next = index + cmdbuf[index];
+        cmdbuf[index] = cmdbuf[0];
+        
+        if (next == index)
+            break;
+        index = next;
+    }
+}
 
-#define ADDR 0x34
-#define BADDR 0x35
+void read_commands(Serial* ser) {
+    int index = 0;
+    bool start_byte = false;
+    while (true) {
+        if (ser->readable()) {
+            char c;
+            ser->read(&c, 1);
 
-#define VID 0x3A3A
-#define PID 0x0002
+            //ser->printf("\t\t> %d %c\t%d %d == %d\n", c, c, start_byte, index, cmdbuf[1]);
 
-#define SDA PB_7
-#define SCL PB_6
+            if (c == SERIAL_START_BYTE) {
+                cmdbuf[0] = c;
+                cmdbuf[1] = 0;
+                index = 1;
+                start_byte = true;
+            }
+            else if (start_byte) {
+                cmdbuf[index] = c;
+                index ++;
+            }
+        }
 
-#define GPIO1 PB_2
-#define GPIO2 PB_3
+        if (index == cmdbuf[1] && start_byte) {
+            start_byte = false;
+            cmdbuf[index] = 0;
+            do_cobs();
+            
+            found = true;
+            while (found) {
+                ThisThread::sleep_for(200ms);
+            }
+        }
+    }
+}
 
-/* External I2C control function for radio
- * Control Software can be found on github
- */
-void I2C_MODE() {
-    DigitalOut led1(S_LED_1);
-    DigitalOut led2(S_LED_2);
-    led1.write(1);
-    led2.write(1);
+typedef enum {
+    RADIO_POWER,
+    RADIO_RSSI,
+    RADIO_DEBUG,
+    RADIO_FREQUENCY,
+    RADIO_RATE,
+    RADIO_FILTER,
+    RADIO_DEVIATION,
+    RADIO_MODULATION,
+    RADIO_APPLY,
+    RADIO_HELP,
+} radio_property;
+
+struct command {
+    bool valid;
+    bool get;
+    radio_property property;
+    float value;
+};
+
+bool get_bit(uint32_t bits, uint8_t bit) {
+    return (bits >> bit) & 1;
+}
+void toggle_bit(uint32_t* bits, uint8_t bit) {
+    *bits ^= (1 << bit);
+}
+
+command parse_command(const char* buf) {
+    command out;
+    out.valid = false;
+
+    if (buf[0] != SERIAL_START_BYTE)
+        return out;
     
-
-    USBSerial pc(false, VID, PID);  
-    //SerialStream<serial> pc(serial);
-
-    DigitalIn addrPin(ADDR_PIN);
-    addrPin.mode(PullDown);
-
+    size_t size = buf[1];
+    if (size < 4)
+        return out;
     
+    if (buf[3] != '+')
+        return out;
+    
+    out.get = true;
+    if (buf[4] == 's' || buf[4] == 'S')
+        out.get = false;
 
-    Radio radio(&pc);
-    radio.init();
-    radio.setup_443();
+    const char power[15]      = "power";
+    const char rssi[15]       = "rssi";
+    const char debug[15]      = "debug";
+    const char frequency[15]  = "frequency";
+    const char rate[15]       = "rate";
+    const char filter[15]     = "filter";
+    const char deviation[15]  = "deviation";
+    const char modulation[15] = "modulation";
+    const char apply[15]      = "apply";
+    const char help[15]       = "help";
+
+    uint32_t valid = 0b1111111111;
+    int offset = (!out.get || buf[4] == 'g' || buf[4] == 'G') ? 5 : 4;
+    int i = offset;
+    for (; i<size; i++) {
+        if (get_bit(valid, 0) && buf[i] != power[i-offset])
+            toggle_bit(&valid, 0);
+        if (get_bit(valid, 1) && buf[i] != rssi[i-offset])
+            toggle_bit(&valid, 1);
+        if (get_bit(valid, 2) && buf[i] != debug[i-offset])
+            toggle_bit(&valid, 2);
+        if (get_bit(valid, 3) && buf[i] != frequency[i-offset])
+            toggle_bit(&valid, 3);
+        if (get_bit(valid, 4) && buf[i] != rate[i-offset])
+            toggle_bit(&valid, 4);
+        if (get_bit(valid, 5) && buf[i] != filter[i-offset])
+            toggle_bit(&valid, 5);
+        if (get_bit(valid, 6) && buf[i] != deviation[i-offset])
+            toggle_bit(&valid, 6);
+        if (get_bit(valid, 7) && buf[i] != modulation[i-offset])
+            toggle_bit(&valid, 7);
+        if (get_bit(valid, 8) && buf[i] != apply[i-offset])
+            toggle_bit(&valid, 8);
+        if (get_bit(valid, 9) && buf[i] != help[i-offset])
+            toggle_bit(&valid, 9);
+
+
+        float res = log2f((float)valid);
+        //std::cout << buf[i] << " " << valid << " " << res << "\n";
+        if ((int)res == res) {
+            if (valid != 0) {
+                out.valid = true;
+                out.property = static_cast<radio_property>(res);
+            }
+            break;
+        }
+    }
+    
+    // if setting, exaust paramater name
+    if (!out.get) {
+        for (; i<size; i++) {
+            if (get_bit(valid, 0) && buf[i] != power[i-offset])
+                toggle_bit(&valid, 0);
+            if (get_bit(valid, 1) && buf[i] != rssi[i-offset])
+                toggle_bit(&valid, 1);
+            if (get_bit(valid, 2) && buf[i] != debug[i-offset])
+                toggle_bit(&valid, 2);
+            if (get_bit(valid, 3) && buf[i] != frequency[i-offset])
+                toggle_bit(&valid, 3);
+            if (get_bit(valid, 4) && buf[i] != rate[i-offset])
+                toggle_bit(&valid, 4);
+            if (get_bit(valid, 5) && buf[i] != filter[i-offset])
+                toggle_bit(&valid, 5);
+            if (get_bit(valid, 6) && buf[i] != deviation[i-offset])
+                toggle_bit(&valid, 6);
+            if (get_bit(valid, 7) && buf[i] != modulation[i-offset])
+                toggle_bit(&valid, 7);
+            if (get_bit(valid, 8) && buf[i] != apply[i-offset])
+                toggle_bit(&valid, 8);
+            if (get_bit(valid, 9) && buf[i] != help[i-offset])
+                toggle_bit(&valid, 9);
+                
+            if (valid == 0)
+                break;
+        }
+    }
+    
+    sscanf(&buf[i], "%f", &out.value);
+    
+    return out;
+}
+
+int main() {
+    Serial ser(TX, RX, 115200);
+    Radio radio(MOSI, MISO, SCLK, CS, RADIO_RST, RADIO_INT, RADIO_MARC_INT, &ser);
+
+    DigitalOut l1(LED1);
+    DigitalOut l2(LED2);
+
+    l1.write(1);
+    l2.write(0);
 
     radio.set_debug(true);
+    bool exists = radio.checkExistance();
+    bool init = radio.init();
+    radio.setup_434();
+    radio.update();
 
-    I2CSlave slave(SDA, SCL);
+    float f = radio.get_frequency();
+    float p = radio.get_power();
     
-    if (!addrPin.read())
-        slave.address(ADDR << 1); //keep actual addresss
-    else
-        slave.address(BADDR << 1);
+    ser.printf("Device Found: %s\nDevice Init: %s\nFrequency: %f\nPower: %f\n",
+        (exists ? "Yes" : "No"),
+        (init   ? "Yes" : "No"),
+        f, p
+    );
 
 
-    pc.printf("I2C confiigured !!\n");
-    if (addrPin.read() == 1) {
-        pc.printf("using backup address: 0x%X\n", BADDR);
-    }
-    else {
-        pc.printf("using regular address: 0x%X\n", ADDR);
-    }
+    Timer t;
+    t.start();
+    Thread th;
+    th.start(callback(read_commands, &ser));
+    while (true) {
+        if (found) {
+            t.reset();
+            
+            //ser.printf("%s\n", &cmdbuf[3]);
+            //for (int i = 3; i<cmdbuf[1]; i++) {
+            //    ser.printf("\t%d| %d %c\n", i, cmdbuf[i], cmdbuf[i]);
+            //}
 
-    const char msg[] = "ArmLabCC1200";
+            if (cmdbuf[3] == '+') {
+                command cmd = parse_command((const char*)cmdbuf); // should be safe since we are essentially using 'found' as a mutex
 
-    enum State {
-        Idle,
-        Transmit,
-        Recieve_len,
-        Recieve,
-    };
-
-    State state = Idle;
-    int arg = 0;
-
-    size_t len;
-    char* packet;
-
-    while (1) {
-        if (state == Idle) {
-            led1.write(0);
-            led2.write(1);
-        }
-        else {
-            led1.write(1);
-            led2.write(0);
-        }
-        int i = slave.receive();
-        switch (i) {
-            case I2CSlave::ReadAddressed: {
-                if (state == Idle) {
-                    int res = slave.write(msg, strlen(msg) + 1); // Includes null char
-                    pc.printf("wrote msg | res: %d\n", res);
-                }
-
-                else if (state == Recieve_len) {
-                    slave.write(len);
-
-
-                    if (len == 0) {
-                        state = Idle;
-                        pc.printf("no packet, skipping Recieve phase\n");
-                        pc.printf("mode: Idle\n");
-                    }
-                    else {
-                        state = Recieve;
-                        pc.printf("mode: Recieve\n");
-                    }
-                }
-
-                else if (state == Recieve) {
-                    slave.write(packet, len);
-                    delete[] packet;
-                    state = Idle;
-                    pc.printf("mode: Idle\n");
-                }
-
-                break;
-            }
-            case I2CSlave::WriteAddressed: {
-                if (state == Idle) {
-                    char buf[5];
-                    slave.read(buf, 5);
-
-                    pc.printf("cmd: %d, args: %d %d %d %d\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
-
-                    switch (buf[0]) {
-                        case 1:
-                            state = Transmit;
-                            arg = buf[1];
-                            pc.printf("mode: Transmit, expecting %d bytes\n", arg);
+                if (!cmd.valid)
+                    ser.printf("Error | Invalid Command\n");
+                else {
+                    switch (cmd.property) {
+                        case RADIO_POWER: {
+                            if (cmd.get)
+                                ser.printf("Power: %f\n", radio.get_power());
+                            else {
+                                if (radio.set_power(cmd.value))
+                                    ser.printf("Set Power: %f\n", cmd.value);
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
                             break;
-                        case 2:
-                            state = Recieve_len;
-                            pc.printf("collecting packet\n");
-                            //packet = "test test msg";
-                            packet = radio.recieve(&len);
-
-                            pc.printf("mode: Recieve_len, waiting for read\n");
-                            break;
-
-                        /*radio.setModulationFormat(modFormat);
-                        radio.setFSKDeviation(fskDeviation);
-                        radio.setSymbolRate(symbolRate);
-                        radio.setRXFilterBandwidth(rxFilterBW);*/
-                        case 3:
-                        case 4:
-                        case 5:
-                        case 6:
-                        case 7: {
-                            float val;
-                            memcpy(&val, &buf[1], 4);
-
-                            string log = "";
-
-                            switch (buf[0]) {
-                                case 3:
-                                    log = "frequency";
-                                    radio.set_frequency(val);
-                                    break;
-                                case 4:
-                                    log = "power";
-                                    radio.set_power(val);
-                                    break;
-                                case 5:
-                                    log = "deviation";
-                                    radio.set_deviation(val);
-                                    break;
-                                case 6:
-                                    log = "symbol rate";
-                                    radio.set_rx_filter(val);
-                                    break;
-                                case 7:
-                                    log = "rx fsk deviation";
-                                    radio.set_rx_filter(val);
-                                    break;
+                        }
+                        case RADIO_RSSI: {
+                            if (cmd.get)
+                                ser.printf("Rssi: %f\n", radio.get_rssi());
+                            else {
+                                ser.printf("Error\n");
                             }
-
-                            pc.printf("setting %s to %f\n", log.c_str(), val);
                             break;
                         }
-                        case 8:
-                            radio.set_modulation(buf[1]);
-                            pc.printf("setting modulation to %d", buf[1]);
-                            break;
-                        case 9: {
-                            bool res = radio.init();
-                            pc.printf("reset CC1200, detected = %s\n", res ? "true" : "false");
+                        case RADIO_DEBUG: {
+                            if (cmd.get)
+                                ser.printf("Debug: %s\n", (radio.get_debug() ? "True" : "False"));
+                            else {
+                                radio.set_debug(cmd.value > 0);
+                                ser.printf("Set Debug: %s\n", (cmd.value > 0 ? "True" : "False"));
+                            }
+                            break;    
+                        }
+                        case RADIO_FREQUENCY: {
+                            if (cmd.get)
+                                ser.printf("Frequency: %f\n", radio.get_frequency());
+                            else {
+                                if (radio.set_frequency(cmd.value))
+                                    ser.printf("Set Frequency: %f\n", cmd.value);
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
                             break;
                         }
-                        case 10: {
-                            pc.printf("attempting soft STM32 Reset");
-                            NVIC_SystemReset();
-                        }
-                        case 0:
-                        default:
-                            state = Idle;
+                        case RADIO_RATE: {
+                            if (cmd.get)
+                                ser.printf("Symbol Rate: %f\n", radio.get_symbol_rate());
+                            else {
+                                if (radio.set_symbol_rate(cmd.value))
+                                    ser.printf("Set Symbol Rate: %f\n", cmd.value);
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
                             break;
+                        }
+                        case RADIO_FILTER: {
+                            if (cmd.get)
+                                ser.printf("RX Filter: %f\n", radio.get_rx_filter());
+                            else {
+                                if (radio.set_rx_filter(cmd.value))
+                                    ser.printf("Set RX Filter: %f\n", cmd.value);
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
+                            break;
+                        }
+                        case RADIO_DEVIATION: {
+                            if (cmd.get)
+                                ser.printf("Deviation: %f\n", radio.get_deviation());
+                            else {
+                                if (radio.set_deviation(cmd.value))
+                                    ser.printf("Set Deviation: %f\n", cmd.value);
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
+                            break;
+                        }
+                        case RADIO_MODULATION: {
+                            if (cmd.get)
+                                switch (radio.get_modulation()) {
+                                    case CC1200::ModFormat::FSK_2: {
+                                        ser.printf("Modulation: FSK_2\n");
+                                        break;
+                                    }
+                                    case CC1200::ModFormat::GFSK_2: {
+                                        ser.printf("Modulation: GFSK_2\n");
+                                        break;
+                                    }
+                                    case CC1200::ModFormat::ASK: {
+                                        ser.printf("Modulation: ASK\n");
+                                        break;
+                                    }
+                                    case CC1200::ModFormat::FSK_4: {
+                                        ser.printf("Modulation: FSK_4\n");
+                                        break;
+                                    }
+                                    case CC1200::ModFormat::GFSK_4: {
+                                        ser.printf("Modulation: GFSK_4\n");
+                                        break;
+                                    }
+                                }
+                            else {
+                                CC1200::ModFormat mod = static_cast<CC1200::ModFormat>((int)cmd.value);
+                                if (radio.set_modulation(mod)) {
+                                    ser.printf("Set ");
+                                    switch (mod) {
+                                        case CC1200::ModFormat::FSK_2: {
+                                            ser.printf("Modulation: FSK_2\n");
+                                            break;
+                                        }
+                                        case CC1200::ModFormat::GFSK_2: {
+                                            ser.printf("Modulation: GFSK_2\n");
+                                            break;
+                                        }
+                                        case CC1200::ModFormat::ASK: {
+                                            ser.printf("Modulation: ASK\n");
+                                            break;
+                                        }
+                                        case CC1200::ModFormat::FSK_4: {
+                                            ser.printf("Modulation: FSK_4\n");
+                                            break;
+                                        }
+                                        case CC1200::ModFormat::GFSK_4: {
+                                            ser.printf("Modulation: GFSK_4\n");
+                                            break;
+                                        }
+                                    }
+                                }
+                                else
+                                    ser.printf("Error: %f\n", cmd.value);
+                            }    
+                            break;
+                        }
+                        case RADIO_APPLY: {
+                            radio.init();
+                            radio.update();
+                            ser.printf("Settings Applied\n");
+                            break;
+                        }
+                        case RADIO_HELP: {
+                            ser.printf("power      | (g/s) float\n");
+                            ser.printf("rssi       | (g)   float\n");
+                            ser.printf("debug      | (g/s) bool\n");
+                            ser.printf("frequency  | (g/s) float\n");
+                            ser.printf("rate       | (g/s) float\n");
+                            ser.printf("filter     | (g/s) float\n");
+                            ser.printf("deviation  | (g/s) float\n");
+                            ser.printf("modulation | (g/s) enum\n");
+                            ser.printf("\t 0: 2FSK\n");
+                            ser.printf("\t 1: 2GFSK\n");
+                            ser.printf("\t 3: ASK\n");
+                            ser.printf("\t 4: 4FSK\n");
+                            ser.printf("\t 0: 4GFSK\n");
+                            ser.printf("apply      | (g/s)\n");
+                            ser.printf("help       | (g)   text\n");
+                            break;
+                        }
                     }
+            
                 }
-                else if (state == Transmit) {
-                    char data[arg + 1];
-                    slave.read(data, arg);
-    
-                    data[arg] = 0;
-                    pc.printf("sending: %s\n", data);
-                    radio.transmit(data, arg+1);
+            }
+            else {
+                char* _temp = new char[cmdbuf[1]-3];
+                memcpy(_temp, (char*)&cmdbuf[3], cmdbuf[1]-3); // WARNING: unsafe, ensure cmdbuf is locked for operation
 
-                    state = Idle;
-                    pc.printf("Idle\n");
-                }
+                bool res = radio.transmit(_temp, cmdbuf[1]-3);
+                ser.printf("Transmit: %s\n", res ? "Success" : "Fail");
+
+                delete[] _temp;
                 
-                
-                break;
+                ser.printf("Transmit Time: %d ms\n", t.read_ms());
             }
+
+            found = false;
         }
-    }
-}
 
-/* External Serial control function for radio
- * Control Software can be found on github
- */
-void SERIAL_MODE() {
-    DigitalOut led1(S_LED_1);
-    DigitalOut led2(S_LED_2);
+        t.reset();
+        size_t len = 0;
+        char* msg = radio.recieve(&len);
 
-    USBSerial pc(false, VID, PID);
-
-    BufferedSerial dummy(PA_9, PA_10, 9600);
-    SerialStream<BufferedSerial> dummyPC(dummy);
-
-    Radio radio(&dummyPC);
-    radio.init();
-    radio.setup_443();
-
-    radio.set_debug(false);
-
-    while (1) {
-        pc.sync();
-        led1.write(0);
-        led2.write(1);
-        //pc.printf("idle\n");
-
-        // get command
-        char buf[5] = {0,0,0,0,0};
-        //pc.scanf("%5s", buf);
-        for (size_t i = 0; i<5; i++) {
-            buf[i] = pc.getc();
+        if (len > 0) {
+            ser.printf("Recieve Time: %d ms\n", t.read_ms());
+            ser.printf("\"%s\"\n", msg);
+            for (int i = 0; i<len; i++) {
+                ser.printf("\t%d| %d %c\n", i, msg[i], msg[i]);
+            }
+            ser.printf("RSSI: %d\n", radio.get_rssi());
         }
-        pc.getc(); //flush trailing newline / return char
+
+        delete[] msg;
+
         
-        led2.write(0);
-        led1.write(1);
-        //pc.printf("got cmd: 0x%X 0x%X 0x%X 0x%X 0x%X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
 
-        switch (buf[0]) {
-            case 1: {
-                int size = buf[1];
 
-                char msg[size];            
 
-                for (int i = 0; i<size; i++) {
-                    msg[i] = pc.getc();
-                }
-                pc.getc(); //flush trailing newline / return char
-
-                radio.transmit(msg, size);
-                //pc.printf("%d, %s\n", buf[1], msg);
-                break;
-            }
-            case 2: {
-                size_t len = 0;
-                char* packet = radio.recieve(&len);
-
-                //pc.printf("%c",(char)len);
-                pc.putc((char) len);
-
-                if (len == 0) {
-                    delete[] packet;
-                    continue;
-                }       
-
-                for (int i = 0; i<len; i++) {
-                    pc.putc(packet[i]);
-                }
-
-                delete[] packet;
-
-                break;
-            }
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7: {
-                float val;
-                memcpy(&val, &buf[1], 4);
-
-                string log = "";
-
-                switch (buf[0]) {
-                    case 3:
-                        radio.set_frequency(val);
-                        break;
-                    case 4:
-                        radio.set_power(val);
-                        break;
-                    case 5:
-                        radio.set_deviation(val);
-                        break;
-                    case 6:
-                        radio.set_rx_filter(val);
-                        break;
-                    case 7:
-                        radio.set_rx_filter(val);
-                        break;
-                }
-
-            }
-            case 8:
-                radio.set_modulation(buf[1]);
-                break;
-            case 9: {
-                radio.init();
-                break;
-            }
-            case 10: {
-                NVIC_SystemReset();
-            }
-            case 0:
-            default: {
-                char msg[13] = "ArmLabCC1200";
-                pc.write(msg, 12);
-            }
-        }
     }
-}
-
-
-/* Example function for how the radio can be used in a standalone mode
- * Function essentially constantly waits for a message, when it gets one it:
- *      transmits a status
- *      prints the message to console
- *      if the message is 1 or 0, toggles gpio
- *
- * Note: I found that when working at high transmission speeds (1ms external delay on Serial mode)
- *       the delay should be fine tuned, too low of a delay means packets are not fully read leading to
- *       bad data getting stuck in the buffer, too much of a delay and packets are skipped
- */
-void REPEAT() {
-    USBSerial pc(false, 0x0, 0x0);
-
-    DigitalOut led1(S_LED_1);
-    DigitalOut led2 (S_LED_2);
-    DigitalOut gpio2(GPIO2);
-
-    led1.write(1);
-    gpio2.write(0);
-
-    Radio radio(&pc);
-    radio.init();
-    radio.setup_443();
-
-    radio.set_debug(false);
-
-
-    size_t len = 0;
-    char* packet;
-
-    while (1) {
-        led2.write(0);
-        
-        packet = radio.recieve(&len);
-
-        if (len == 0) {
-            ThisThread::sleep_for(18ms);
-
-            delete[] packet;
-            continue;
-        }
-
-        led2.write(1);
-
-        radio.transmit("rec", 4);
-
-        ThisThread::sleep_for(18ms);
-
-        if (len == 1) {
-            if (packet[0] == '1') {
-                gpio2.write(1);
-            }
-            else if (packet[0] == '0') {
-                gpio2.write(0);
-            }
-        }
-
-        for (int i = 0; i<len; i++) {
-            pc.putc(packet[i]);
-        }
-        pc.putc('\n');
-        
-        delete[] packet;
-    }
-
-}
-
-
-int main()
-{
-    DigitalIn serPin(SERIAL_PIN);
-
-    serPin.mode(PullDown);
-
-    ThisThread::sleep_for(1s);
-
-    if (serPin.read() == 1) {
-        SERIAL_MODE();
-    }
-
-    I2C_MODE();
-    //REPEAT();
 }

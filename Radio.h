@@ -1,32 +1,27 @@
 #include <mbed.h>
 #include <string>
-#include "SerialStream.h"
 #include "CC1200.h"
+#include "Serial.h"
+
+#define RADIO_DEBUG(...) {if (ser != nullptr) {ser->debug("RADIO| ", __VA_ARGS__);}}
 
 
-#include <Stream.h>
-
-#define PIN_SPI_MOSI PB_15  //PC_7
-#define PIN_SPI_MISO PB_14  //PA_6
-#define PIN_SPI_SCLK PB_13  //PA_5
-#define PIN_CS PB_12  //PA_4
-#define PIN_RST PA_8 //PA_5
 
 class Radio{
-    
     public:
 
-        Radio(Stream * pc);
+        Radio(PinName Mosi, PinName Miso, PinName CLK, PinName CS, PinName Reset, PinName INT, PinName MarcINT, Serial* ser = nullptr);
         ~Radio();
         bool checkExistance();
         bool init();
-        void setup_443();
-        float get_frequency();
+        void setup_434();
+        void update();
+
+        
        
-        float get_power();
+        
         void checkSignalTransmit();
-        void transmit(const char* message, size_t len);
-        bool hasPacket();
+        bool transmit(const char* message, size_t len);
         char* recieve(size_t* len);
 
         bool set_frequency(float frequency);
@@ -34,8 +29,15 @@ class Radio{
         bool set_deviation(float deviation);
         bool set_symbol_rate(float symbol_rate);
         bool set_rx_filter(float filter_bandwith);
-
-        bool set_modulation(char modulation);
+        bool set_modulation(CC1200::ModFormat);
+        
+        int get_rssi();
+        float get_frequency();
+        float get_power();
+        float get_deviation();
+        float get_symbol_rate();
+        float get_rx_filter();
+        CC1200::ModFormat get_modulation();
         
         /*radio.setModulationFormat(modFormat);
                         radio.setFSKDeviation(fskDeviation);
@@ -43,6 +45,7 @@ class Radio{
                         radio.setRXFilterBandwidth(rxFilterBW);*/
 
         void set_debug(bool debug);
+        bool get_debug();
         //State checkState(return state; );
 
         enum mode {
@@ -52,7 +55,8 @@ class Radio{
 
     private:
 
-        Stream * pc;
+        Serial* ser;
+        Serial* hold;
         CC1200 radio;
         size_t max_msg_size;
         bool debug = false;
@@ -62,5 +66,6 @@ class Radio{
         float deviation;
         float symbol_rate;
         float filter_bandwith;
+        CC1200::ModFormat modulation;
 
 };
